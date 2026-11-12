@@ -114,10 +114,12 @@ const views = {
     <div class="start-hero"><div class="start-logo">같이가게</div>
       <h1>동네 가게와 대학생이<br>함께 만드는 실무 프로젝트</h1>
       <p class="psub">어떤 분으로 시작할지 골라 주세요. 고른 쪽 화면만 보여요.</p></div>
-    <button class="role-card" data-role="owner"><span class="role-ic">${ICON.home}</span><span><strong>사장님으로 시작</strong>
-      <span class="psub">전공 대학생을 찾아 사진·SNS·메뉴판 작업을 맡겨요.</span></span><span class="role-go">›</span></button>
-    <button class="role-card" data-role="student"><span class="role-ic">${ICON.user}</span><span><strong>학생으로 시작</strong>
-      <span class="psub">내 프로필과 작업물을 올리고 실무 의뢰를 받아요.</span></span><span class="role-go">›</span></button>
+    <div class="role-grid">
+    <button class="role-card" data-role="owner"><span class="role-ic">${ICON.home}</span><span class="role-txt"><strong>사장님</strong>
+      <span class="psub">대학생에게 디자인·홍보 작업 맡기기</span></span><span class="role-go">시작하기 ›</span></button>
+    <button class="role-card" data-role="student"><span class="role-ic">${ICON.user}</span><span class="role-txt"><strong>학생</strong>
+      <span class="psub">내 프로필 올리고 실무 의뢰 받기</span></span><span class="role-go">시작하기 ›</span></button>
+    </div>
     </section>`;
   },
   "o-home"() {
