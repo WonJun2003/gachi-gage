@@ -3,10 +3,11 @@
 실행:  python app.py   →  브라우저에서 http://127.0.0.1:5000
 """
 import os
+import secrets
 import socket
 import uuid
 
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, request, send_from_directory, session
 
 try:
     from dotenv import load_dotenv
@@ -25,6 +26,46 @@ app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # 업로드 1건 최대 8MB
 os.makedirs(UPLOADS, exist_ok=True)
 db.init()
+
+
+def _secret_key():
+    """역할 쿠키 서명용 키. 환경변수가 없으면 data/secret.key 에 만들어 둔다."""
+    if os.getenv("SECRET_KEY"):
+        return os.getenv("SECRET_KEY")
+    path = os.path.join(BASE, "data", "secret.key")
+    if not os.path.exists(path):
+        with open(path, "w") as f:
+            f.write(secrets.token_hex(32))
+    with open(path) as f:
+        return f.read().strip()
+
+
+app.secret_key = _secret_key()
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
+ROLES = ("owner", "student")
+
+
+def _role():
+    return session.get("role")
+
+
+def _need(role):
+    """선택한 역할이 아니면 막는다. 학생은 사장님 기능을, 사장님은 학생 기능을 쓸 수 없다."""
+    if _role() != role:
+        abort(403, "사장님 전용 기능이에요." if role == "owner" else "학생 전용 기능이에요.")
+
+
+def _student_can_see(p):
+    return (p["status"] == "open" and p.get("invited") in (None, db.ME)) or db.ME in p["applicants"] or p.get("chosen") == db.ME
+
+
+def _for_student(p):
+    """학생에게 보낼 때는 다른 지원자 정보와 AI 점수를 뺀다."""
+    p = dict(p)
+    p["applicants"] = [a for a in p["applicants"] if a == db.ME]
+    for k in ("scores", "scoreLive", "pitch", "saved_by_owner"):
+        p.pop(k, None)
+    return p
 
 
 def _num(v, default=0):
@@ -53,11 +94,34 @@ def uploaded(name):
 
 
 # ---------- API ----------
+@app.post("/api/role")
+def choose_role():
+    role = request.get_json(force=True).get("role")
+    if role not in ROLES:
+        abort(400, "사장님 또는 학생 중에서 골라 주세요.")
+    session.clear()
+    session["role"] = role
+    return jsonify(role=role)
+
+
+@app.post("/api/logout")
+def logout():
+    session.clear()
+    return jsonify(role=None)
+
+
 @app.get("/api/bootstrap")
 def bootstrap():
+    role = _role()
+    if role not in ROLES:
+        return jsonify(role=None)
     projects = db.all_projects()
-    return jsonify(projects=projects, students=db.students_view(projects), me=db.ME, aiLive=ai.enabled(),
-                   bookmarks=db.get_meta("bookmarks", []), myProfile=db.my_profile())
+    students = db.students_view(projects)
+    if role == "owner":
+        return jsonify(role=role, projects=[p for p in projects if p.get("mine")], students=students, me=None,
+                       aiLive=ai.enabled(), bookmarks=db.get_meta("bookmarks", []))
+    return jsonify(role=role, projects=[_for_student(p) for p in projects if _student_can_see(p)],
+                   students={db.ME: students[db.ME]}, me=db.ME, aiLive=ai.enabled(), myProfile=db.my_profile())
 
 
 def _text(v, n):
@@ -67,6 +131,7 @@ def _text(v, n):
 @app.post("/api/profile")
 def save_profile():
     """학생이 자기 프로필을 올리거나 고친다."""
+    _need("student")
     d = request.get_json(force=True)
     if not _text(d.get("name"), 20) or not _text(d.get("headline"), 60):
         abort(400, "이름과 한 줄 소개를 채워 주세요.")
@@ -83,12 +148,13 @@ def save_profile():
         "region": _text(d.get("region"), 30) or "경산", "avail": _text(d.get("avail"), 30),
         "intro": _text(d.get("intro"), 600), "open": bool(d.get("open")), "works": works, "services": services,
     })
-    projects = db.all_projects()
-    return jsonify(students=db.students_view(projects), myProfile=db.my_profile())
+    me = db.students_view(db.all_projects())[db.ME]
+    return jsonify(students={db.ME: me}, myProfile=db.my_profile())
 
 
 @app.post("/api/bookmarks/toggle")
 def toggle_bookmark():
+    _need("owner")
     sid = request.get_json(force=True).get("id")
     if sid not in db.STUDENTS:
         abort(404, "학생을 찾을 수 없어요.")
@@ -99,12 +165,15 @@ def toggle_bookmark():
 
 @app.post("/api/reset")
 def reset():
+    _need("owner")
     db.reset()
     return jsonify(ok=True)
 
 
 @app.post("/api/upload")
 def upload():
+    if _role() not in ROLES:
+        abort(403, "먼저 사장님 또는 학생으로 시작해 주세요.")
     f = request.files.get("file")
     if not f or not f.filename:
         abort(400, "파일이 없어요.")
@@ -118,6 +187,7 @@ def upload():
 
 @app.post("/api/ai/brief")
 def ai_brief():
+    _need("owner")
     body = request.get_json(force=True)
     data, live = ai.brief(body.get("text", ""), body.get("shop", "우리 가게"))
     return jsonify(data=data, live=live)
@@ -125,6 +195,7 @@ def ai_brief():
 
 @app.post("/api/projects")
 def create_project():
+    _need("owner")
     d = request.get_json(force=True)
     if not d.get("title") or not d.get("types") or not _num(d.get("pay")):
         abort(400, "작업 종류, 제목, 보수를 채워 주세요.")
@@ -144,6 +215,7 @@ def create_project():
 
 @app.post("/api/projects/<pid>/match")
 def match(pid):
+    _need("owner")
     p = _project_or_404(pid)
     p["scores"], p["scoreLive"] = ai.match(p, db.students_view(db.all_projects()))
     return jsonify(db.save(p))
@@ -155,6 +227,19 @@ def action(pid):
     p = _project_or_404(pid)
     body = request.get_json(force=True)
     t, a = body.get("type"), body.get("payload") or {}
+    owner_actions = {"choose", "feedback", "check", "rate", "complete"}
+    student_actions = {"apply", "save", "add_drafts", "request_review", "fbcheck", "final"}
+    if t in owner_actions:
+        _need("owner")
+        if not p.get("mine"):
+            abort(403, "내 의뢰만 관리할 수 있어요.")
+    elif t in student_actions:
+        _need("student")
+        if t in ("apply", "save"):
+            if not _student_can_see(p):
+                abort(403, "지원할 수 없는 의뢰예요.")
+        elif p.get("chosen") != db.ME:
+            abort(403, "내가 맡은 프로젝트만 작업할 수 있어요.")
 
     if t == "apply":                                   # 학생: 지원
         if db.ME not in p["applicants"] and p["status"] == "open":
@@ -196,10 +281,12 @@ def action(pid):
         p["status"] = "done"
     else:
         abort(400, "알 수 없는 동작이에요.")
-    return jsonify(db.save(p))
+    saved = db.save(p)
+    return jsonify(saved if _role() == "owner" else _for_student(saved))
 
 
 @app.errorhandler(400)
+@app.errorhandler(403)
 @app.errorhandler(404)
 @app.errorhandler(413)
 def err(e):

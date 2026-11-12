@@ -1,3 +1,4 @@
+[hidden]{display:none!important}
 /* Layout: one phone-width app column, centered, with a role switch above it */
 :root{
   --bg:#EEF0EC; --surface:#FFFFFF; --sunk:#F5F6F3; --ink:#1A1E1C; --muted:#69716C; --line:#E0E4DF;
@@ -161,3 +162,18 @@ textarea.input{resize:vertical;min-height:90px}
 .iconbtn.del{width:32px;height:32px;font-size:18px;color:var(--muted)}
 .thumb:has(img){padding:0}
 .wrow .row2{grid-template-columns:auto 1fr}
+/* 시작 화면 · 역할 표시 */
+.who{display:flex;align-items:center;gap:8px}
+.who-role{background:var(--ink);color:var(--surface);border-radius:999px;padding:5px 12px;font-size:13px;font-weight:600}
+.who button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px;font-size:13px;color:var(--muted)}
+.start{justify-content:center;gap:14px;padding-block:40px}
+.start-hero{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
+.start-logo{font-weight:700;color:var(--accent);letter-spacing:-.02em}
+.start-hero h1{margin:0;font-size:24px;line-height:1.35;letter-spacing:-.03em;text-wrap:balance}
+.role-card{display:grid;grid-template-columns:48px 1fr 20px;gap:14px;align-items:center;text-align:left;border:1px solid var(--line);
+  background:var(--surface);border-radius:16px;padding:18px 16px}
+.role-card:hover{border-color:var(--accent);background:var(--accent-soft)}
+.role-card strong{display:block;font-size:16px;margin-bottom:2px}
+.role-ic{width:48px;height:48px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center}
+.role-ic svg{width:24px;height:24px}
+.role-go{font-size:22px;color:var(--muted)}

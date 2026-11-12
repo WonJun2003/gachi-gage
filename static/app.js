@@ -3,7 +3,7 @@ const HUES = ["#2F7A63", "#B0603A", "#4E5FA8", "#8A4E8F", "#A8892A", "#3D7F9A"];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const won = n => Number(n || 0).toLocaleString("ko-KR") + "원";
 
-const state = { role: "owner", view: "o-home", sel: null, draft: null, aiBusy: false, filter: "전체",
+const state = { role: null, view: "start", sel: null, draft: null, aiBusy: false, filter: "전체",
   projects: [], students: {}, me: "s1", aiLive: false, pick: {}, bookmarks: [],
   find: { q: "", type: "전체", region: "전체", day: "전체", saved: false }, stu: null, pfTab: "포트폴리오" };
 const P = id => state.projects.find(p => p.id === id);
@@ -29,11 +29,19 @@ async function uploadFiles(files) {
   }
   return out;
 }
+const HOME = { owner: "o-home", student: "profile" };
+const ALLOWED = {
+  owner: ["o-home", "o-find", "o-new", "o-apply", "o-student", "work", "progress", "done"],
+  student: ["profile", "me-view", "s-list", "s-detail", "s-mine", "work", "progress", "done"],
+};
 async function boot() {
   try {
     const d = await api("/api/bootstrap");
+    state.role = d.role;
+    if (!d.role) { state.view = "start"; return render(); }
     Object.assign(state, { projects: d.projects, students: d.students, me: d.me, aiLive: d.aiLive, bookmarks: d.bookmarks || [], myProfile: d.myProfile });
     document.getElementById("ai-state").textContent = d.aiLive ? "AI: Claude 연결됨" : "AI: 규칙 기반 예시";
+    if (!ALLOWED[d.role].includes(state.view)) state.view = HOME[d.role];
     render();
   } catch (e) { app.innerHTML = `<div class="err">${esc(e.message)} 서버(app.py)가 켜져 있는지 확인해 주세요.</div>`; }
 }
@@ -101,6 +109,17 @@ function findList() {
 
 /* ---------- 화면 ---------- */
 const views = {
+  "start"() {
+    return `<section class="content start">
+    <div class="start-hero"><div class="start-logo">같이가게</div>
+      <h1>동네 가게와 대학생이<br>함께 만드는 실무 프로젝트</h1>
+      <p class="psub">어떤 분으로 시작할지 골라 주세요. 고른 쪽 화면만 보여요.</p></div>
+    <button class="role-card" data-role="owner"><span class="role-ic">${ICON.home}</span><span><strong>사장님으로 시작</strong>
+      <span class="psub">전공 대학생을 찾아 사진·SNS·메뉴판 작업을 맡겨요.</span></span><span class="role-go">›</span></button>
+    <button class="role-card" data-role="student"><span class="role-ic">${ICON.user}</span><span><strong>학생으로 시작</strong>
+      <span class="psub">내 프로필과 작업물을 올리고 실무 의뢰를 받아요.</span></span><span class="role-go">›</span></button>
+    </section>`;
+  },
   "o-home"() {
     const mine = state.projects.filter(p => p.mine);
     return bar("내 의뢰") + `<section class="content">
@@ -324,15 +343,19 @@ const views = {
       <label class="sr" for="review">한 줄 후기</label><input class="input" id="review" placeholder="한 줄 후기 (학생 포트폴리오에 표시돼요)" value="${esc(state.reviewDraft ?? p.review ?? "")}"></div>
       <p class="notice">약속한 결과물을 확인한 뒤 완료해 주세요. 완료하면 보수가 학생에게 지급돼요.</p>
       <button class="btn" id="complete" ${all && p.rating ? "" : "disabled"}>완료 확인하기</button>`
-      : `<div class="empty">사장님이 체크리스트를 확인하고 완료하면 보수가 지급되고 포트폴리오에 등록돼요.<br>상단의 ‘사장님’으로 바꿔 확인해 보세요.</div>`}
+      : `<div class="empty">사장님이 체크리스트를 확인하고 완료하면 보수가 지급되고 포트폴리오에 등록돼요.</div>`}
     </section>` + tabs();
   }
 };
 
 function render() {
+  if (!state.role) state.view = "start";
+  else if (!ALLOWED[state.role].includes(state.view)) state.view = HOME[state.role];
   app.innerHTML = views[state.view]();
-  document.getElementById("role-owner").setAttribute("aria-pressed", state.role === "owner");
-  document.getElementById("role-student").setAttribute("aria-pressed", state.role === "student");
+  const who = document.getElementById("who");
+  who.hidden = !state.role;
+  document.getElementById("who-label").textContent = state.role === "owner" ? "사장님" : "학생";
+  document.getElementById("reset-wrap").hidden = state.role !== "owner";
 }
 let tt; function toast(m) { const t = document.getElementById("toast"); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, 2800); }
 function go(v) { syncProfile(); state.view = v; render(); app.querySelector(".content")?.scrollTo(0, 0); window.scrollTo(0, 0); }
@@ -350,11 +373,14 @@ function syncDraft() {
 }
 
 /* ---------- 이벤트 ---------- */
-document.getElementById("role-owner").onclick = () => { syncDraft(); syncProfile(); state.role = "owner"; go("o-home"); };
-document.getElementById("role-student").onclick = () => { syncDraft(); state.role = "student"; go("s-list"); };
+document.getElementById("logout").onclick = async () => {
+  await api("/api/logout", {});
+  Object.assign(state, { role: null, view: "start", projects: [], students: {}, bookmarks: [], draft: null, pd: null, pick: {}, sel: null, stu: null });
+  render(); window.scrollTo(0, 0);
+};
 document.getElementById("reset").onclick = async () => {
   if (!confirm("모든 의뢰와 진행 내역을 지우고 예시 데이터로 되돌릴까요?")) return;
-  await api("/api/reset", {}); state.draft = null; state.pd = null; state.pick = {}; await boot(); go(state.role === "owner" ? "o-home" : "s-list"); toast("예시 데이터로 초기화했어요.");
+  await api("/api/reset", {}); state.draft = null; state.pd = null; state.pick = {}; await boot(); go(HOME[state.role]); toast("예시 데이터로 초기화했어요.");
 };
 
 async function guarded(fn) { try { await fn(); } catch (e) { state.aiBusy = false; render(); toast(e.message); } }
@@ -362,6 +388,7 @@ async function guarded(fn) { try { await fn(); } catch (e) { state.aiBusy = fals
 app.addEventListener("click", e => {
   const b = e.target.closest("button,[data-pick]"); if (!b) return;
   const ds = b.dataset;
+  if (ds.role) return guarded(async () => { await api("/api/role", { role: ds.role }); state.view = HOME[ds.role]; await boot(); window.scrollTo(0, 0); });
   if (ds.go) { syncDraft(); return go(ds.go); }
   if (ds.apply) { state.sel = ds.apply; return go("o-apply"); }
   if (ds.progress) { state.sel = ds.progress; return go("progress"); }

@@ -11,13 +11,10 @@
 <body>
 <div class="top">
   <div class="brand">같이가게<small>대학생 × 소상공인 실무 프로젝트 · MVP</small></div>
-  <div class="roles" role="group" aria-label="역할 전환">
-    <button id="role-owner" aria-pressed="true">사장님</button>
-    <button id="role-student" aria-pressed="false">학생</button>
-  </div>
+  <div class="who" id="who" hidden><span class="who-role" id="who-label"></span><button id="logout">나가기</button></div>
 </div>
 <main class="app" id="app"><p class="notice" style="padding:40px">불러오는 중…</p></main>
-<p class="foot"><span id="ai-state"></span> · 데이터는 이 컴퓨터에 저장돼요. <button id="reset">예시 데이터로 초기화</button></p>
+<p class="foot"><span id="ai-state"></span><span id="reset-wrap" hidden> · <button id="reset">예시 데이터로 초기화</button></span></p>
 <div class="toast" id="toast" hidden></div>
 <script src="/static/app.js"></script>
 </body>
