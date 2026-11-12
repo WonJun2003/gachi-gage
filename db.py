@@ -119,11 +119,26 @@ def set_meta(key, value):
     return value
 
 
+PROFILE_FIELDS = ("name", "school", "major", "headline", "tags", "region", "avail", "intro", "open", "works", "services")
+
+
+def my_profile():
+    """학생(나)이 직접 올린 프로필. 저장한 적이 없으면 예시 프로필을 쓴다."""
+    s = json.loads(json.dumps(STUDENTS[ME]))
+    s.update(get_meta("profile_" + ME, {}))
+    s["pf"] = [w["title"] for w in s["works"][:3]]
+    return s
+
+
+def save_my_profile(data):
+    return set_meta("profile_" + ME, {k: data[k] for k in PROFILE_FIELDS if k in data})
+
+
 def students_view(projects):
     """기본 학생 정보에 같이가게에서 완료한 프로젝트(작업물·후기)를 더해 돌려준다."""
     out = {}
     for sid, s in STUDENTS.items():
-        s = json.loads(json.dumps(s))
+        s = my_profile() if sid == ME else json.loads(json.dumps(s))
         for p in projects:
             if p.get("chosen") == sid and p.get("status") == "done":
                 s["works"].insert(0, {"title": f"{p['shop']} {p['title']}", "kind": "같이가게", "tags": p["types"][:1],

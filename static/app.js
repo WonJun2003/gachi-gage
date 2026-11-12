@@ -32,7 +32,7 @@ async function uploadFiles(files) {
 async function boot() {
   try {
     const d = await api("/api/bootstrap");
-    Object.assign(state, { projects: d.projects, students: d.students, me: d.me, aiLive: d.aiLive, bookmarks: d.bookmarks || [] });
+    Object.assign(state, { projects: d.projects, students: d.students, me: d.me, aiLive: d.aiLive, bookmarks: d.bookmarks || [], myProfile: d.myProfile });
     document.getElementById("ai-state").textContent = d.aiLive ? "AI: Claude 연결됨" : "AI: 규칙 기반 예시";
     render();
   } catch (e) { app.innerHTML = `<div class="err">${esc(e.message)} 서버(app.py)가 켜져 있는지 확인해 주세요.</div>`; }
@@ -62,7 +62,7 @@ function tabs() {
     ? [["o-home", "내 의뢰", "home"], ["o-find", "학생 찾기", "search"], ["o-new", "의뢰하기", "plus"], ["work", "진행 작업", "case"]]
     : [["s-list", "프로젝트", "grid"], ["s-mine", "내 지원", "doc"], ["work", "진행 작업", "case"], ["profile", "프로필", "user"]];
   const v = state.view;
-  const cur = v === "o-new" ? "o-new" : ["progress", "done", "work"].includes(v) ? "work" : v === "s-detail" ? "s-list" : v === "o-apply" ? "o-home" : v === "o-student" ? "o-find" : v;
+  const cur = v === "o-new" ? "o-new" : ["progress", "done", "work"].includes(v) ? "work" : v === "s-detail" ? "s-list" : v === "o-apply" ? "o-home" : v === "o-student" ? "o-find" : v === "me-view" ? "profile" : v;
   return `<nav class="tabs ${t.length === 3 ? "three" : ""}">${t.map(([k, l, i]) => `<button data-go="${k}" ${cur === k ? 'aria-current="page"' : ""}>${ICON[i]}${l}</button>`).join("")}</nav>`;
 }
 function thumb(p) { const img = p.refImgs?.[0]; return `<div class="thumb" style="background:${HUES[(p.hue || 0) % HUES.length]}">${img ? `<img src="${esc(img)}" alt="">` : esc(p.shop)}</div>`; }
@@ -153,22 +153,24 @@ const views = {
       <div class="stack" id="find-list">${findList()}</div></div></section>` + tabs();
   },
   "o-student"() {
-    const s = S(state.stu), t = state.pfTab;
+    const own = state.view === "me-view", s = S(own ? state.me : state.stu), t = state.pfTab;
+    const cta = own ? `<button class="btn ghost" data-go="profile">프로필 수정하기</button>`
+      : `<button class="btn" data-invite="${s.id}" ${s.open ? "" : "disabled"}>${s.open ? "이 학생에게 의뢰하기" : "지금은 의뢰를 받지 않아요"}</button>`;
     const rv = r => `<div class="rev"><div class="rev-head"><span>${esc(r.user)}</span><span class="stars-sm">${"★".repeat(r.rating)}${"☆".repeat(5 - r.rating)}</span></div><div>${esc(r.text)}</div></div>`;
     const body = t === "포트폴리오" ? `
       <div class="sec"><div class="sec-head"><h2 class="h-lg">작업물</h2><span class="hint">전체 ${s.works.length}</span></div>
         <div class="works">${s.works.map((w, k) => `<figure>${workTile(w, k + 1)}<figcaption><strong>${esc(w.title)}</strong><span>${esc(w.kind)} · ${esc(w.tags.join(", "))}</span></figcaption></figure>`).join("")}</div></div>
       <div class="sec"><h2 class="h-lg">함께할 수 있는 작업</h2>
         <div class="card">${s.services.map(v => `<div class="svc"><span>${esc(v.name)}</span><strong>${esc(v.price)}</strong></div>`).join("")}
-        <button class="btn" data-invite="${s.id}" ${s.open ? "" : "disabled"}>${s.open ? "이 학생에게 의뢰하기" : "지금은 의뢰를 받지 않아요"}</button></div></div>
+        ${cta}</div></div>
       <div class="sec"><div class="sec-head"><h2 class="h-lg">사장님 후기 <span class="hint">(${s.reviews.length})</span></h2>${s.reviews.length > 2 ? `<button class="linkbtn" data-pftab="후기">전체 보기</button>` : ""}</div>
         ${s.reviews.length ? `<div class="card">${s.reviews.slice(0, 2).map(rv).join("")}</div>` : `<div class="empty">아직 후기가 없어요.</div>`}</div>`
     : t === "소개" ? `<div class="sec"><p class="intro">${esc(s.intro)}</p>
         <dl class="kv"><dt>학교</dt><dd>${esc(s.school)}</dd><dt>학과</dt><dd>${esc(s.major)}</dd><dt>활동 지역</dt><dd>${esc(s.region)}</dd>
         <dt>방문 일정</dt><dd>${esc(s.avail)}</dd><dt>완료 프로젝트</dt><dd>${s.done}건</dd><dt>잘하는 작업</dt><dd>${esc(s.tags.join(", "))}</dd></dl></div>
-        <button class="btn" data-invite="${s.id}" ${s.open ? "" : "disabled"}>${s.open ? "이 학생에게 의뢰하기" : "지금은 의뢰를 받지 않아요"}</button>`
+        ${cta}`
     : `<div class="sec">${s.reviews.length ? `<div class="card">${s.reviews.map(rv).join("")}</div>` : `<div class="empty">아직 후기가 없어요.</div>`}</div>`;
-    return bar("포트폴리오", "o-find", bmBtn(s.id)) + `<section class="content">
+    return bar(own ? "사장님에게 보이는 내 프로필" : "포트폴리오", own ? "profile" : "o-find", own ? "" : bmBtn(s.id)) + `<section class="content">
     <div class="shead">${avatar(s)}<div class="shead-main"><div class="sname">${esc(s.name)}</div><div class="psub">${esc(s.school)} ${esc(s.major)}</div></div>
       <span class="pill ${s.open ? "" : "off"}">${s.open ? "의뢰 가능" : "의뢰 마감"}</span></div>
     <div class="stack"><strong class="headline">${esc(s.headline)}</strong>
@@ -228,16 +230,57 @@ const views = {
       : `<div class="empty">아직 지원한 프로젝트가 없어요.<br>프로젝트 탭에서 마음에 드는 의뢰에 지원해 보세요.</div>`}</div></section>` + tabs();
   },
   "profile"() {
-    const s = S(state.me), done = state.projects.filter(p => p.chosen === state.me && p.status === "done");
-    return bar("프로필") + `<section class="content">
-    <div class="pcard"><div class="thumb" style="background:${HUES[0]};border-radius:50%">${esc(s.name[0])}</div><div><div class="ptitle">${esc(s.name)}</div><div class="psub">${esc(s.major)}</div>
-    <div class="chips" style="margin-top:6px">${s.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div></div></div>
-    <div class="sec"><h2>포트폴리오</h2><div class="pf">${s.pf.map((t, k) => `<div class="thumb" style="background:${HUES[k % HUES.length]}">${esc(t)}</div>`).join("")}
-    ${done.map(p => `<div class="thumb" style="background:var(--accent)">${p.drafts[0]?.img ? `<img src="${esc(p.drafts[0].img)}" alt="">` : esc(p.shop) + " 실무"}</div>`).join("")}</div></div>
-    <div class="sec"><h2>실무 프로젝트 기록</h2>${done.length ? done.map(p => `<div class="card"><strong>${esc(p.shop)} · ${esc(p.title)}</strong>
+    const d = state.pd || (state.pd = JSON.parse(JSON.stringify(state.myProfile)));
+    const done = state.projects.filter(p => p.chosen === state.me && p.status === "done");
+    const TAGS = ["사진 촬영", "SNS 제작", "메뉴판", "홍보물 제작", "로고", "숏폼 영상", "마케팅 기획"];
+    const REG = ["경산", "대구", "영천", "청도"];
+    const regs = d.region.split(/,\s*/).filter(Boolean);
+    const AV = ["평일 방문 가능", "주말 방문 가능", "평일·주말 방문 가능", "매장 방문 어려움"];
+    return bar("내 프로필 올리기") + `<section class="content">
+    <div class="card invite">${avatar({ id: state.me, name: d.name || "나" })}<div><strong>사장님이 학생 찾기에서 보는 프로필이에요.</strong>
+      <div class="psub">작업물과 가격을 채울수록 지명 의뢰를 받기 쉬워요.</div></div></div>
+    <label class="check toggle"><input type="checkbox" id="p-open" ${d.open ? "checked" : ""}><span><strong>지금 의뢰 받기</strong><br><span class="hint">끄면 사장님에게 '의뢰 마감'으로 보여요.</span></span></label>
+
+    <div class="sec"><h2>기본 정보</h2>
+      <label class="label" for="p-name">이름</label><input class="input" id="p-name" maxlength="20" value="${esc(d.name)}">
+      <div class="row2"><div class="sec"><label class="label" for="p-school">학교</label><input class="input" id="p-school" value="${esc(d.school)}"></div>
+        <div class="sec"><label class="label" for="p-major">학과·학년</label><input class="input" id="p-major" value="${esc(d.major)}"></div></div>
+      <label class="label" for="p-headline">한 줄 소개 <span>카드 맨 위에 크게 보여요</span></label>
+      <input class="input" id="p-headline" maxlength="60" value="${esc(d.headline)}" placeholder="예) 가게의 분위기를 담는 사진과 SNS 콘텐츠"></div>
+
+    <div class="sec"><div class="label">잘하는 작업 <span>최대 5개</span></div>
+      <div class="chips">${TAGS.map(t => `<button class="chip" data-ptag="${t}" aria-pressed="${d.tags.includes(t)}">${t}</button>`).join("")}</div></div>
+    <div class="sec"><div class="label">활동 지역</div>
+      <div class="chips">${REG.map(r => `<button class="chip" data-preg="${r}" aria-pressed="${regs.includes(r)}">${r}</button>`).join("")}</div></div>
+    <div class="sec"><label class="label" for="p-avail">매장 방문 일정</label>
+      <select class="input" id="p-avail">${AV.map(a => `<option ${a === d.avail ? "selected" : ""}>${a}</option>`).join("")}${AV.includes(d.avail) ? "" : `<option selected>${esc(d.avail)}</option>`}</select></div>
+    <div class="sec"><label class="label" for="p-intro">자기소개</label>
+      <textarea class="input" id="p-intro" maxlength="600" placeholder="어떤 작업을 좋아하고, 사장님과 어떻게 일하는지 적어 주세요.">${esc(d.intro)}</textarea></div>
+
+    <div class="sec"><div class="sec-head"><h2>작업물 <span class="hint">${d.works.length}개</span></h2><span class="hint">앞의 3개가 카드에 보여요</span></div>
+      ${d.works.map((w, k) => `<div class="card wrow">
+        <label class="wimg" for="w-img-${k}">${w.img ? `<img src="${esc(w.img)}" alt="">` : "+ 사진"}</label><input type="file" id="w-img-${k}" data-wimg="${k}" accept="image/*" class="sr">
+        <div class="stack">
+          <input class="input" data-wf="title" data-k="${k}" aria-label="작업물 제목" placeholder="작업물 제목" value="${esc(w.title)}">
+          <div class="row2"><select class="input" data-wf="kind" data-k="${k}" aria-label="구분">${["작업", "수업과제", "개인 작업"].map(o => `<option ${o === w.kind ? "selected" : ""}>${o}</option>`).join("")}</select>
+            <input class="input" data-wf="tags" data-k="${k}" aria-label="분야" placeholder="분야 (예: 사진)" value="${esc(w.tags.join(", "))}"></div>
+        </div>
+        <button class="iconbtn del" data-wdel="${k}" aria-label="작업물 삭제">×</button></div>`).join("")}
+      <button class="btn ghost" id="p-addwork">+ 작업물 추가</button></div>
+
+    <div class="sec"><h2>함께할 수 있는 작업 <span class="hint">가격</span></h2>
+      ${d.services.map((v, k) => `<div class="srow"><input class="input" data-sf="name" data-k="${k}" aria-label="작업" placeholder="예) 메뉴 사진 5장" value="${esc(v.name)}">
+        <input class="input" data-sf="price" data-k="${k}" aria-label="가격" placeholder="8만원~" value="${esc(v.price)}">
+        <button class="iconbtn del" data-sdel="${k}" aria-label="삭제">×</button></div>`).join("")}
+      <button class="btn ghost" id="p-addsvc">+ 작업 추가</button></div>
+
+    <div class="stack"><button class="btn" id="p-save">프로필 저장하기</button><button class="btn ghost" id="p-preview">사장님에게 보이는 모습 미리보기</button></div>
+
+    <div class="sec"><h2>같이가게 실무 기록</h2>${done.length ? done.map(p => `<div class="card"><strong>${esc(p.shop)} · ${esc(p.title)}</strong>
       <div class="psub">${esc(p.items.join(" + "))} · 사장님 평가 ${"★".repeat(p.rating)}${"☆".repeat(5 - p.rating)}</div>${p.review ? `<div class="psub">“${esc(p.review)}”</div>` : ""}</div>`).join("")
-      : `<div class="empty">프로젝트를 완료하면 결과물과 사장님 평가가 여기에 쌓여요.</div>`}</div></section>` + tabs();
+      : `<div class="empty">같이가게에서 프로젝트를 완료하면 결과물과 사장님 후기가 프로필에 자동으로 쌓여요.</div>`}</div></section>` + tabs();
   },
+  "me-view"() { return views["o-student"](); },
   "work"() {
     const list = state.projects.filter(p => p.chosen && (state.role === "owner" ? p.mine : p.chosen === state.me));
     return bar("진행 작업") + `<section class="content"><div class="stack">${list.length ? list.map(p => `<article class="card"><strong>${esc(p.shop)} · ${esc(p.title)}</strong>${stepsHTML(p)}
@@ -292,18 +335,26 @@ function render() {
   document.getElementById("role-student").setAttribute("aria-pressed", state.role === "student");
 }
 let tt; function toast(m) { const t = document.getElementById("toast"); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, 2800); }
-function go(v) { state.view = v; render(); app.querySelector(".content")?.scrollTo(0, 0); window.scrollTo(0, 0); }
+function go(v) { syncProfile(); state.view = v; render(); app.querySelector(".content")?.scrollTo(0, 0); window.scrollTo(0, 0); }
+function syncProfile() {
+  const d = state.pd; if (!d || state.view !== "profile") return; const v = id => document.getElementById(id)?.value ?? "";
+  Object.assign(d, { name: v("p-name"), school: v("p-school"), major: v("p-major"), headline: v("p-headline"), avail: v("p-avail"), intro: v("p-intro"),
+    open: !!document.getElementById("p-open")?.checked });
+  app.querySelectorAll("[data-wf]").forEach(el => { const w = d.works[+el.dataset.k]; if (!w) return;
+    w[el.dataset.wf] = el.dataset.wf === "tags" ? el.value.split(",").map(x => x.trim()).filter(Boolean) : el.value; });
+  app.querySelectorAll("[data-sf]").forEach(el => { const sv = d.services[+el.dataset.k]; if (sv) sv[el.dataset.sf] = el.value; });
+}
 function syncDraft() {
   const d = state.draft; if (!d || state.view !== "o-new") return; const v = id => document.getElementById(id)?.value ?? "";
   Object.assign(d, { text: v("ai-text"), shop: v("f-shop"), title: v("f-title"), items: [v("f-item0"), v("f-item1")], pay: v("f-pay"), days: v("f-days"), revisions: v("f-rev"), visit: v("f-visit") });
 }
 
 /* ---------- 이벤트 ---------- */
-document.getElementById("role-owner").onclick = () => { syncDraft(); state.role = "owner"; go("o-home"); };
+document.getElementById("role-owner").onclick = () => { syncDraft(); syncProfile(); state.role = "owner"; go("o-home"); };
 document.getElementById("role-student").onclick = () => { syncDraft(); state.role = "student"; go("s-list"); };
 document.getElementById("reset").onclick = async () => {
   if (!confirm("모든 의뢰와 진행 내역을 지우고 예시 데이터로 되돌릴까요?")) return;
-  await api("/api/reset", {}); state.draft = null; state.pick = {}; await boot(); go(state.role === "owner" ? "o-home" : "s-list"); toast("예시 데이터로 초기화했어요.");
+  await api("/api/reset", {}); state.draft = null; state.pd = null; state.pick = {}; await boot(); go(state.role === "owner" ? "o-home" : "s-list"); toast("예시 데이터로 초기화했어요.");
 };
 
 async function guarded(fn) { try { await fn(); } catch (e) { state.aiBusy = false; render(); toast(e.message); } }
@@ -322,6 +373,19 @@ app.addEventListener("click", e => {
   if (ds.pftab) { state.pfTab = ds.pftab; return render(); }
   if (ds.invite) { const s = S(ds.invite); state.draft = { shop: "카페 온담", text: "", title: "", types: s.tags.filter(t => ["사진 촬영", "SNS 제작", "메뉴판", "홍보물 제작", "로고"].includes(t)).slice(0, 2), items: ["", ""], pay: "", days: "", revisions: "", visit: "", refImgs: [], materials: "", apply: [], tips: null, live: null, invite: s.id }; return go("o-new"); }
   if (ds.bm) return guarded(async () => { state.bookmarks = (await api("/api/bookmarks/toggle", { id: ds.bm })).bookmarks; toast(marked(ds.bm) ? "찜한 학생에 담았어요." : "찜을 해제했어요."); if (state.view === "o-find") { document.getElementById("find-list").innerHTML = findList(); } else render(); });
+  if (ds.ptag) { syncProfile(); const d = state.pd; d.tags = d.tags.includes(ds.ptag) ? d.tags.filter(t => t !== ds.ptag) : d.tags.length >= 5 ? (toast("잘하는 작업은 5개까지 고를 수 있어요."), d.tags) : [...d.tags, ds.ptag]; return render(); }
+  if (ds.preg) { syncProfile(); const d = state.pd; let r = d.region.split(/,\s*/).filter(Boolean); r = r.includes(ds.preg) ? r.filter(x => x !== ds.preg) : [...r, ds.preg]; d.region = r.join(", "); return render(); }
+  if (ds.wdel) { syncProfile(); state.pd.works.splice(+ds.wdel, 1); return render(); }
+  if (ds.sdel) { syncProfile(); state.pd.services.splice(+ds.sdel, 1); return render(); }
+  if (b.id === "p-addwork") { syncProfile(); state.pd.works.push({ title: "", kind: "작업", tags: [], img: null }); render(); app.querySelector(`[data-wf="title"][data-k="${state.pd.works.length - 1}"]`)?.focus(); return; }
+  if (b.id === "p-addsvc") { syncProfile(); state.pd.services.push({ name: "", price: "" }); return render(); }
+  if (b.id === "p-preview" || b.id === "p-save") return guarded(async () => {
+    syncProfile();
+    const r = await api("/api/profile", state.pd);
+    state.students = r.students; state.myProfile = r.myProfile; state.pd = JSON.parse(JSON.stringify(r.myProfile));
+    if (b.id === "p-preview") { state.pfTab = "포트폴리오"; go("me-view"); toast("저장하고 미리보기를 열었어요."); }
+    else { render(); toast("프로필을 저장했어요. 사장님 학생 찾기에 바로 보여요."); }
+  });
   if (b.id === "find-saved") { state.find.saved = !state.find.saved; return render(); }
   if (ds.star) return guarded(async () => { await act(state.sel, "rate", { n: +ds.star, review: state.reviewDraft ?? "" }); render(); });
   const p = P(state.sel);
@@ -370,6 +434,7 @@ app.addEventListener("click", e => {
 app.addEventListener("change", e => {
   const t = e.target;
   guarded(async () => {
+    if (t.dataset.wimg !== undefined) { syncProfile(); const [u] = await uploadFiles(t.files); if (u) state.pd.works[+t.dataset.wimg].img = u.url; render(); return; }
     if (t.id === "f-img") { syncDraft(); const ups = await uploadFiles(t.files); state.draft.refImgs.push(...ups.map(u => u.url)); render(); }
     if (t.id === "d-img") { const ups = await uploadFiles(t.files); await act(state.sel, "add_drafts", { drafts: ups.map(u => ({ name: u.name, img: u.url })) }); render(); }
     if (["find-type", "find-region", "find-day"].includes(t.id)) { state.find[t.id.slice(5)] = t.value; document.getElementById("find-list").innerHTML = findList(); return; }

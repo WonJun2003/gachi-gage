@@ -57,7 +57,34 @@ def uploaded(name):
 def bootstrap():
     projects = db.all_projects()
     return jsonify(projects=projects, students=db.students_view(projects), me=db.ME, aiLive=ai.enabled(),
-                   bookmarks=db.get_meta("bookmarks", []))
+                   bookmarks=db.get_meta("bookmarks", []), myProfile=db.my_profile())
+
+
+def _text(v, n):
+    return str(v or "").strip()[:n]
+
+
+@app.post("/api/profile")
+def save_profile():
+    """학생이 자기 프로필을 올리거나 고친다."""
+    d = request.get_json(force=True)
+    if not _text(d.get("name"), 20) or not _text(d.get("headline"), 60):
+        abort(400, "이름과 한 줄 소개를 채워 주세요.")
+    if not d.get("tags"):
+        abort(400, "잘하는 작업을 하나 이상 골라 주세요.")
+    works = [{"title": _text(w.get("title"), 40), "kind": _text(w.get("kind"), 10) or "작업",
+              "tags": [_text(t, 10) for t in (w.get("tags") or []) if _text(t, 10)][:3], "img": w.get("img") or None}
+             for w in (d.get("works") or []) if _text(w.get("title"), 40)][:12]
+    services = [{"name": _text(v.get("name"), 30), "price": _text(v.get("price"), 15)}
+                for v in (d.get("services") or []) if _text(v.get("name"), 30)][:6]
+    db.save_my_profile({
+        "name": _text(d["name"], 20), "school": _text(d.get("school"), 30), "major": _text(d.get("major"), 30),
+        "headline": _text(d["headline"], 60), "tags": [_text(t, 10) for t in d["tags"]][:5],
+        "region": _text(d.get("region"), 30) or "경산", "avail": _text(d.get("avail"), 30),
+        "intro": _text(d.get("intro"), 600), "open": bool(d.get("open")), "works": works, "services": services,
+    })
+    projects = db.all_projects()
+    return jsonify(students=db.students_view(projects), myProfile=db.my_profile())
 
 
 @app.post("/api/bookmarks/toggle")
@@ -118,7 +145,7 @@ def create_project():
 @app.post("/api/projects/<pid>/match")
 def match(pid):
     p = _project_or_404(pid)
-    p["scores"], p["scoreLive"] = ai.match(p, db.STUDENTS)
+    p["scores"], p["scoreLive"] = ai.match(p, db.students_view(db.all_projects()))
     return jsonify(db.save(p))
 
 
