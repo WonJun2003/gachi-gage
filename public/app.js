@@ -59,6 +59,14 @@ function toast(msg) {
 }
 
 function loading(msg, steps) {
+  if (steps) { // 글쓰기 결과를 만드는 중 (와이어프레임: 멋지게 만들고 있어요!)
+    $nav.classList.add('hidden');
+    $app.innerHTML = `<div class="w-screen"><div class="w-head"><span class="w-back ghost"></span>${progress(1, 1)}</div>
+      <div class="w-body w-center">${robot('guide', 'w-robot')}<h1>멋지게 만들고 있어요!</h1><p class="w-sub muted" id="loadMsg">잠시만 기다려 주세요</p>
+      <ul class="steps">${steps.map((s, i) => `<li data-step="${i}">${esc(s)}</li>`).join('')}</ul></div>
+      <div class="w-foot w-center"><div class="spinner big"></div></div></div>`;
+    return;
+  }
   $app.innerHTML = `<div class="loading">${robot('guide', 'robot md')}<div class="spinner"></div><div id="loadMsg">${esc(msg)}</div>${steps ? `<ul class="steps">${steps.map((s, i) => `<li data-step="${i}">${esc(s)}</li>`).join('')}</ul>` : ''}</div>`;
 }
 function stepDone(i) {
@@ -1383,7 +1391,7 @@ async function onboardingClick(e) {
       state.store = created;
       lsSet('gachi.storeId', created.id);
       ob.step = 0;
-      return setView('new');
+      return startConnect('onboarding'); // 와이어프레임: 가게 등록 → 계정 연결 → 홈
     } catch (err) {
       e.target.disabled = false;
       return toast(err.message);
@@ -1521,7 +1529,8 @@ async function afterLogin(me) {
   else lsDel('gachi.storeId');
   document.getElementById('userBox').classList.remove('hidden');
   document.getElementById('userName').textContent = me.user.loginId;
-  setView('posts');
+  document.body.classList.add('in-app');
+  setView('home');
 }
 document.getElementById('logoutBtn').addEventListener('click', async () => {
   if (!(await confirmBox('로그아웃할까요?', '로그아웃'))) return;
@@ -1529,6 +1538,7 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   Object.assign(state, { user: null, storeId: null, store: null, post: null });
   lsDel('gachi.storeId');
   document.getElementById('userBox').classList.add('hidden');
+  document.body.classList.remove('in-app');
   render();
 });
 
@@ -1547,13 +1557,19 @@ async function render() {
   try {
     if (!state.store) state.store = await api('GET', `/api/stores/${state.storeId}`);
     await loadConnections();
-    if (state.view === 'posts') { await renderPosts(); snsSync(); }
-    else if (state.view === 'new') renderNew();
+    if (state.view === 'new') { state.view = 'write'; state.wstep = 1; state.wideas = null; } // 예전 '새 게시물' → 글쓰기 단계
+    if (state.view === 'home') await renderHome();
+    else if (state.view === 'write') renderWrite();
+    else if (state.view === 'connect') renderConnect();
+    else if (state.view === 'posts') { await renderPosts(); snsSync(); }
     else if (state.view === 'post') await openPost(state.postId);
     else if (state.view === 'store') { $app.innerHTML = storeForm(state.store) + marketingCard(); bindStoreForm(state.store); }
-    else if (state.view === 'channels') await renderChannels();
+    else if (state.view === 'channels') await renderChannelsSimple();
+    else if (state.view === 'channels-adv') await renderChannels();
     else if (state.view === 'insta') await renderInsta();
     else if (state.view === 'customers') await renderCustomers();
+    withTabs();
+    highlightNav();
   } catch (err) {
     if (/가게 정보를 찾을 수 없어요/.test(err.message)) {
       lsDel('gachi.storeId');

@@ -158,6 +158,12 @@ app.put('/api/stores/:id', (req, res) => {
 });
 
 // 뭘 올릴지 모를 때: 아이디어 3개
+app.post('/api/stores/:id/ask', wrap(async (req, res) => {
+  const store = needStore(req, res);
+  if (!store) return;
+  res.json(await llm.answerQuestion(store, req.body?.question, db.listPosts(store.id)));
+}));
+
 app.post('/api/stores/:id/ideas', wrap(async (req, res) => {
   const store = needStore(req, res);
   if (!store) return;
