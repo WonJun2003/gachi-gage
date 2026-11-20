@@ -183,12 +183,40 @@ async function postInstagram(conn, text, photos, publicBaseUrl) {
     creationId = (await call('POST', `${base}/${igId}/media`, { media_type: 'CAROUSEL', children: children.join(','), caption: text, access_token: token })).id;
   }
   await waitReady(base, creationId, token, 'status_code');
-  const mediaId = (await call('POST', `${base}/${igId}/media_publish`, { creation_id: creationId, access_token: token })).id;
+  let mediaId;
+  try {
+    mediaId = (await call('POST', `${base}/${igId}/media_publish`, { creation_id: creationId, access_token: token })).id;
+  } catch (e) {
+    // 인스타그램은 '활동 제한' 같은 오류를 돌려주면서도 실제로는 올려 둘 때가 있어서, 정말 올라갔는지 확인한다
+    mediaId = await findPublished(base, igId, creationId, text, token);
+    if (!mediaId) {
+      if (/보호|제한|block|restrict|spam/i.test(e.message)) {
+        throw new Error('인스타그램이 계정 보호를 위해 잠시 게시를 막았어요. 짧은 시간에 여러 번 올리거나 지우면 생겨요. 몇 시간 뒤에 한 번만 다시 시도해 주세요.');
+      }
+      throw e;
+    }
+  }
   let url = '';
   try {
     url = (await call('GET', `${base}/${mediaId}`, { fields: 'permalink', access_token: token })).permalink || '';
   } catch {}
   return { id: mediaId, url };
+}
+
+// media_publish가 오류를 냈을 때: 컨테이너가 PUBLISHED이거나, 방금 올린 같은 문구의 게시물이 있으면 그 ID를 돌려준다
+async function findPublished(base, igId, creationId, text, token) {
+  const head = text.trim().slice(0, 40);
+  for (let i = 0; i < 3; i++) {
+    await sleep(2500);
+    try {
+      const st = await call('GET', `${base}/${creationId}`, { fields: 'status_code', access_token: token });
+      const recent = await call('GET', `${base}/${igId}/media`, { fields: 'id,caption,timestamp', limit: '5', access_token: token });
+      const fresh = (recent.data || []).find((m) => Date.now() - new Date(m.timestamp).getTime() < 10 * 60 * 1000 && (m.caption || '').trim().startsWith(head));
+      if (fresh) return fresh.id;
+      if (st.status_code === 'PUBLISHED' && recent.data?.[0]) return recent.data[0].id;
+    } catch {}
+  }
+  return null;
 }
 
 // ---------- 스레드 ----------
