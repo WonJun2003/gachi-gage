@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>같이가게 · 우리 가게를 이해하는 마케팅 AI</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏪</text></svg>" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">같이가게</div>
+    <div id="providerBadge" class="badge"></div>
+  </header>
+
+  <nav id="nav" class="nav hidden">
+    <button data-view="posts" class="active">내 게시물</button>
+    <button data-view="new" class="nav-new">＋ 새 게시물</button>
+    <button data-view="store">가게 정보</button>
+    <button data-view="channels">계정 연결</button>
+  </nav>
+
+  <main id="app"></main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/imaging.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

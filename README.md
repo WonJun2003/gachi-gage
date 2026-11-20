@@ -56,3 +56,14 @@ gachi-gage/
 ├─ static/       화면 (index.html, app.js, style.css)
 ├─ requirements.txt · run_windows.bat · run_mac_linux.sh · Procfile · .env.example
 ```
+
+## MVP의 한계
+
+- 비밀번호 로그인 없이 시작 화면에서 역할만 골라요. 누구나 어느 역할로든 들어갈 수 있어서, 실서비스에서는 회원가입·로그인이 필요해요.
+- 학생은 예시 학생 "이서윤"으로 고정돼 있어요.
+- 결제와 보수 지급은 화면 문구로만 표시돼요.
+- 실서비스로 키우려면 회원가입·로그인, 결제(PG) 연동, 채팅, 알림이 필요해요.
+
+## SNS 마케팅 (sns-marketing/)
+
+사장님이 홍보할 내용과 사진을 넣으면 AI가 문구·홍보 카드·사진 보정을 만들고, 인스타그램·페이스북·스레드에 동시에 올리고 관리하는 기능이에요. Node.js로 따로 실행해요. 실행 방법과 **실제 구현 / 목업 구분**은 [`sns-marketing/README.md`](sns-marketing/README.md)를 보세요.

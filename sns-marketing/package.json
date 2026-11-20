@@ -1,0 +1,18 @@
+{
+  "name": "gachi-gage",
+  "version": "0.1.0",
+  "description": "같이가게 - 소상공인 마케팅 AI 웹서비스 (해커톤 MVP)",
+  "main": "server/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0"
+  }
+}
