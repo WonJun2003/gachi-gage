@@ -44,7 +44,7 @@ const NAV_GROUP = { home: 'home', posts: 'posts', insta: 'posts', customers: 'po
 function highlightNav() {
   const g = NAV_GROUP[state.view];
   $nav.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.view === g));
-  const full = ['write', 'connect'].includes(state.view); // 단계 화면은 메뉴를 숨김
+  const full = ['write', 'connect', 'admin'].includes(state.view); // 단계 화면은 메뉴를 숨김
   $nav.classList.toggle('hidden', full);
 }
 
@@ -82,6 +82,7 @@ async function renderHome() {
   <div class="home">
     <div class="home-top">
       <button type="button" class="home-store" data-go-view="store">${esc(s.name)} <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+      <button type="button" class="home-admin" data-w-admin>관리자</button>
       <button type="button" class="home-write" data-w-write>＋ 글쓰기</button>
       <button type="button" class="home-me" data-go-view="store" aria-label="내 정보"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="10" r="3.4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 18.5c1.6-2.4 3.9-3.6 6.5-3.6s4.9 1.2 6.5 3.6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
     </div>
@@ -159,6 +160,7 @@ $app.addEventListener('click', (e) => {
   if (state.view !== 'home') return;
   if (e.target.closest('[data-w-write]')) return startWrite();
   if (e.target.closest('[data-w-consult]')) return openFeedback();
+  if (e.target.closest('[data-w-admin]')) return adminLogin();
 });
 $app.addEventListener('submit', async (e) => {
   if (!e.target.matches('[data-w-ask]')) return;
@@ -407,3 +409,87 @@ async function renderChannelsSimple() {
     <button type="button" class="btn ghost" data-go-view="channels-adv" style="margin-top:6px">고급 설정 (공개 주소 등)</button>`;
 }
 $app.addEventListener('click', (e) => { if (e.target.closest('[data-w-connect]')) startConnect('manage'); });
+
+// ---------- 관리자 페이지 (앱을 만든 팀용) ----------
+function adminLogin() {
+  const m = modal(`<div class="fact-title" style="margin-top:0">🔒 관리자</div><p class="hint">관리자 비밀번호를 입력해 주세요.</p>
+    <input data-admin-pw type="password" inputmode="numeric" autocomplete="off" placeholder="관리자 비밀번호" />
+    <div class="row"><button class="btn primary" data-admin-ok>들어가기</button><button class="btn line" data-m="close">취소</button></div>`);
+  const input = m.el.querySelector('[data-admin-pw]');
+  input.focus();
+  const go = async () => {
+    try {
+      await api('POST', '/api/admin/login', { password: input.value });
+      m.close();
+      state.adminTab = state.adminTab || 'stores';
+      setView('admin');
+    } catch (err) { toast(err.message); input.select(); }
+  };
+  m.el.querySelector('[data-admin-ok]').addEventListener('click', go);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+}
+
+const fmtFull = (iso) => (iso ? new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-');
+const KIND_NAME = { app: '앱', meta: 'SNS', ai: 'AI', admin: '관리자' };
+
+async function renderAdmin() {
+  const tab = state.adminTab || 'stores';
+  const tabs = [['stores', '가입 현황'], ['logs', 'API 로그'], ['consents', '약관 동의 기록']];
+  $app.innerHTML = `<div class="adm">
+    <div class="w-head">${backBtn('data-adm-back')}<h1 style="margin:0">관리자</h1><button type="button" class="btn line sm" data-adm-out style="margin-left:auto">나가기</button></div>
+    <div class="w-seg">${tabs.map(([k, l]) => `<button type="button" data-adm-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div id="admBody"><div class="hint">불러오는 중…</div></div>
+    <p class="hint" style="margin-top:14px">개인정보 보호를 위해 아이디는 일부만 보이고, 비밀번호·SNS 토큰·손님 댓글은 관리자도 볼 수 없어요.</p></div>`;
+  const box = document.getElementById('admBody');
+  let d;
+  try {
+    if (tab === 'stores') d = await api('GET', '/api/admin/summary');
+    if (tab === 'logs') d = await api('GET', `/api/admin/logs?kind=${state.adminKind || 'all'}`);
+    if (tab === 'consents') d = await api('GET', '/api/admin/consents');
+  } catch (err) {
+    box.innerHTML = `<div class="card">${esc(err.message)}</div>`;
+    if (/관리자 비밀번호/.test(err.message)) adminLogin();
+    return;
+  }
+  if (state.view !== 'admin') return;
+  if (tab === 'stores') {
+    const c = d.counts;
+    box.innerHTML = `<div class="adm-stats">
+        <div><b>${nf(c.stores)}</b><span>가입한 가게</span></div><div><b>${nf(c.users)}</b><span>회원</span></div>
+        <div><b>${nf(c.newThisWeek)}</b><span>최근 7일 신규</span></div><div><b>${nf(c.published)}</b><span>SNS에 올린 게시물</span></div></div>
+      <div class="adm-table"><div class="adm-tr head"><span>가게</span><span>지역</span><span>게시물</span><span>가입일</span></div>
+      ${d.stores.length ? d.stores.map((s) => `<div class="adm-tr"><span><b>${esc(s.name)}</b><small>${esc(s.category)} · ${esc(s.owner)}</small></span><span>${esc(s.area || '-')}</span><span>${nf(s.posts)}</span><span>${esc(fmtDate(s.createdAt))}</span></div>`).join('')
+        : '<div class="hint" style="padding:12px">아직 가입한 가게가 없어요.</div>'}</div>`;
+  }
+  if (tab === 'logs') {
+    const k = state.adminKind || 'all';
+    const kinds = [['all', `전체 ${nf(d.total)}`], ['app', `앱 ${nf(d.byKind.app)}`], ['meta', `SNS ${nf(d.byKind.meta)}`], ['ai', `AI ${nf(d.byKind.ai)}`], ['error', `실패 ${nf(d.byKind.error)}`]];
+    box.innerHTML = `<div class="chips" style="margin:0 0 10px">${kinds.map(([v, l]) => `<button type="button" class="chip ${k === v ? 'on' : ''}" data-adm-kind="${v}">${l}</button>`).join('')}
+        <button type="button" class="chip" data-adm-reload>🔄 새로고침</button></div>
+      <div class="adm-logs">${d.rows.length ? d.rows.map((x) => `<div class="adm-log ${x.ok ? '' : 'bad'}">
+          <span class="adm-kind k-${esc(x.kind)}">${esc(KIND_NAME[x.kind] || x.kind)}</span>
+          <span class="adm-what"><b>${esc(x.method || '')}</b> ${esc(x.target || '')}${x.platform ? ` <small>${esc(x.platform)}</small>` : ''}${x.note ? `<small class="adm-note">${esc(x.note)}</small>` : ''}</span>
+          <span class="adm-meta">${x.ok ? '✓' : '✕'} ${esc(String(x.status ?? ''))} · ${nf(x.ms)}ms${x.user ? ` · ${esc(x.user)}` : ''}<br>${esc(fmtFull(x.at))}</span></div>`).join('')
+        : '<div class="hint" style="padding:12px">기록이 없어요.</div>'}</div>
+      <p class="hint">최근 1,000건까지 보관해요. 토큰·비밀번호·요청 내용은 기록하지 않아요.</p>`;
+  }
+  if (tab === 'consents') {
+    const ok = (v) => (v ? '<span class="ok">✓</span>' : '<span class="no">✕</span>');
+    box.innerHTML = `<div class="adm-stats three"><div><b>${nf(d.rows.length)}</b><span>회원</span></div>
+        <div><b>${nf(d.rows.filter((r) => r.terms && r.privacy && r.age).length)}</b><span>필수 동의 완료</span></div>
+        <div><b>${nf(d.rows.filter((r) => r.marketing).length)}</b><span>마케팅 수신 동의</span></div></div>
+      <div class="adm-table cons"><div class="adm-tr head"><span>회원</span><span>이용약관</span><span>개인정보</span><span>14세</span><span>마케팅</span></div>
+      ${d.rows.length ? d.rows.map((r) => `<div class="adm-tr"><span><b>${esc(r.user)}</b><small>동의 ${esc(fmtFull(r.agreedAt))}${r.version ? ` · v${esc(r.version)}` : ''}</small></span><span>${ok(r.terms)}</span><span>${ok(r.privacy)}</span><span>${ok(r.age)}</span><span>${ok(r.marketing)}${r.marketingAt ? `<small>${esc(fmtDate(r.marketingAt))}</small>` : ''}</span></div>`).join('')
+        : '<div class="hint" style="padding:12px">아직 회원이 없어요.</div>'}</div>`;
+  }
+}
+
+$app.addEventListener('click', async (e) => {
+  if (state.view !== 'admin') return;
+  let x;
+  if (e.target.closest('[data-adm-back]')) return setView('home');
+  if (e.target.closest('[data-adm-out]')) { await api('POST', '/api/admin/logout').catch(() => {}); toast('관리자 화면에서 나왔어요.'); return setView('home'); }
+  if ((x = e.target.closest('[data-adm-tab]'))) { state.adminTab = x.dataset.admTab; return renderAdmin(); }
+  if ((x = e.target.closest('[data-adm-kind]'))) { state.adminKind = x.dataset.admKind; return renderAdmin(); }
+  if (e.target.closest('[data-adm-reload]')) return renderAdmin();
+});

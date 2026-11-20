@@ -28,7 +28,24 @@ function friendlyError(data, status) {
   return err;
 }
 
+const apilog = require('./apilog');
+function logMeta(method, url, status, ok, t0, err) {
+  const { platform, target } = apilog.metaTarget(url);
+  apilog.add({ kind: 'meta', platform, method, target, status, ok, ms: Date.now() - t0, ...(err ? { note: String(err).slice(0, 120) } : {}) });
+}
+
 async function call(method, url, params = {}, formData, timeoutMs) {
+  const t0 = Date.now();
+  try {
+    const out = await callRaw(method, url, params, formData, timeoutMs);
+    logMeta(method, url, 200, true, t0);
+    return out;
+  } catch (e) {
+    logMeta(method, url, e.status || 0, false, t0, e.message);
+    throw e;
+  }
+}
+async function callRaw(method, url, params = {}, formData, timeoutMs) {
   let res;
   if (method === 'GET') {
     const qs = new URLSearchParams(params).toString();
@@ -235,9 +252,12 @@ async function testConnection(platform, conns) {
 
 // ---------- 게시물 삭제 ----------
 async function callDelete(url, token) {
+  const t0 = Date.now();
   const res = await fetch(`${url}?access_token=${encodeURIComponent(token)}`, { method: 'DELETE' });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.error) throw friendlyError(data, res.status);
+  const ok = res.ok && !data.error;
+  logMeta('DELETE', url, res.status, ok, t0, ok ? '' : data.error?.message);
+  if (!ok) throw friendlyError(data, res.status);
   return data;
 }
 

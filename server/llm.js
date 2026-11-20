@@ -4,6 +4,7 @@
 
 const { buildPostPrompt, buildIdeasPrompt, buildFeedbackPrompt, buildPostFeedbackPrompt } = require('./prompts');
 const { mockPost, mockIdeas, mockFeedback, mockPostFeedback } = require('./mock');
+const apilog = require('./apilog');
 
 function providerName() {
   const p = (process.env.LLM_PROVIDER || 'auto').toLowerCase();
@@ -76,6 +77,8 @@ const hanging = new Set();
 async function geminiRequest(kind, body) {
   const wait = kind === 'image' ? 90000 : 40000;
   const send = async (model) => {
+    const t0 = Date.now();
+    const done = (status, ok, note) => apilog.add({ kind: 'ai', platform: 'gemini', method: 'POST', target: `${model} (${kind === 'image' ? '이미지' : '글'})`, status, ok, ms: Date.now() - t0, ...(note ? { note: String(note).slice(0, 120) } : {}) });
     const res = await fetch(`${GEMINI_BASE()}/v1beta/models/${model}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
@@ -84,10 +87,12 @@ async function geminiRequest(kind, body) {
     }).catch((e) => {
       if (e.name !== 'TimeoutError') throw e;
       hanging.add(model);
+      done(408, false, '응답 없음');
       const err = new Error(`Gemini 응답 없음 ${wait / 1000}초 (${model})`);
       err.status = 408; // 상태가 있으면 askJson이 같은 모델로 또 재시도하지 않음
       throw err;
     });
+    done(res.status, res.ok);
     if (!res.ok) {
       const text = await res.text();
       if (res.status === 404) hanging.add(model); // 목록엔 있어도 새 키에선 못 쓰는 모델(예: 2.5-flash): 다시 고르지 않음
@@ -144,6 +149,7 @@ async function callGemini(system, user, images = []) {
 }
 
 async function callGroq(system, user) {
+  const t0 = Date.now();
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
@@ -154,6 +160,7 @@ async function callGroq(system, user) {
       temperature: 0.8,
     }),
   });
+  apilog.add({ kind: 'ai', platform: 'groq', method: 'POST', target: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile', status: res.status, ok: res.ok, ms: Date.now() - t0 });
   if (!res.ok) {
     const err = new Error(`Groq ${res.status}: ${(await res.text()).slice(0, 300)}`);
     err.status = res.status;

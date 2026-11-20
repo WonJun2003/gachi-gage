@@ -105,6 +105,9 @@ function createUser(data) {
   return user;
 }
 const getUser = (userId) => db.users.find((u) => u.id === userId) || null;
+const allUsers = () => db.users;
+const allStores = () => db.stores;
+const allPosts = () => db.posts;
 function updateUser(userId, data) {
   const u = getUser(userId);
   if (!u) return null;
@@ -170,7 +173,7 @@ const storeOf = (userId) => db.stores.filter((s) => s.ownerId === userId).sort((
 
 module.exports = {
   load, save, id, now,
-  createUser, getUser, updateUser, findUserByLoginId, addSession, getSession, deleteSession, storeOf,
+  createUser, getUser, updateUser, allUsers, allStores, allPosts, findUserByLoginId, addSession, getSession, deleteSession, storeOf,
   recordComment, listCustomers, getCustomer, activitiesOf, updateCustomer, forgetCustomer,
   createStore, getStore, updateStore,
   createPost, getPost, listPosts, updatePost, deletePost,

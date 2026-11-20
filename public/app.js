@@ -1567,6 +1567,7 @@ async function render() {
     if (state.view === 'home') await renderHome();
     else if (state.view === 'write') renderWrite();
     else if (state.view === 'connect') renderConnect();
+    else if (state.view === 'admin') await renderAdmin();
     else if (state.view === 'posts') { await renderPosts(); snsSync(); }
     else if (state.view === 'post') await openPost(state.postId);
     else if (state.view === 'store') { $app.innerHTML = storeForm(state.store) + marketingCard(); bindStoreForm(state.store); }

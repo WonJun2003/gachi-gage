@@ -6,6 +6,8 @@ const db = require('./db');
 const llm = require('./llm');
 const connections = require('./connections');
 const auth = require('./auth');
+const apilog = require('./apilog');
+const crypto = require('crypto');
 const { publish, testConnection, deletePublication, fetchMetrics, exists, reactions } = require('./publish');
 
 db.load();
@@ -16,6 +18,16 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 app.set('trust proxy', 1); // Render 같은 프록시 뒤에서 https·IP를 제대로 알기 위해
 app.use(express.json({ limit: '300kb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+// API 사용 기록: 우리 서버 API를 부를 때마다 무엇을·누가·결과만 남김 (요청 내용은 안 남김)
+app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/admin') || req.path === '/health') return next();
+  const t0 = Date.now();
+  res.on('finish', () => {
+    apilog.add({ kind: 'app', method: req.method, target: req.originalUrl.split('?')[0].replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id'),
+      status: res.statusCode, ok: res.statusCode < 400, ms: Date.now() - t0, user: auth.currentUser(req)?.loginId || '' });
+  });
+  next();
+});
 // 업로드한 사진 (인스타·스레드는 이 주소로 Meta가 사진을 가져감)
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '1h' }));
 
@@ -121,6 +133,79 @@ app.post('/api/auth/logout', (req, res) => {
   auth.endSession(req, res);
   res.json({ ok: true });
 });
+// ---------- 관리자 페이지 (앱을 만든 팀용) ----------
+// 관리자 비밀번호: 환경변수 ADMIN_PASSWORD (없으면 시연용 1234). 통과하면 2시간짜리 관리자 쿠키.
+const ADMIN_COOKIE = 'gg_admin';
+const adminTokens = new Map();
+const adminPass = () => process.env.ADMIN_PASSWORD || '1234';
+function isAdmin(req) {
+  const m = (req.headers.cookie || '').match(/(?:^|;\s*)gg_admin=([a-f0-9]{64})/);
+  const exp = m && adminTokens.get(m[1]);
+  return !!(exp && exp > Date.now());
+}
+app.post('/api/admin/login', (req, res) => {
+  const ip = req.ip || '';
+  if (auth.tooMany('admin:' + ip)) return res.status(429).json({ error: '비밀번호를 여러 번 틀렸어요. 10분 뒤에 다시 시도해 주세요.' });
+  const a = Buffer.from(String(req.body?.password || ''));
+  const b = Buffer.from(adminPass());
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    auth.addFail('admin:' + ip);
+    apilog.add({ kind: 'admin', method: 'POST', target: '관리자 로그인 실패', status: 401, ok: false, ms: 0 });
+    return res.status(401).json({ error: '관리자 비밀번호가 맞지 않아요.' });
+  }
+  const token = crypto.randomBytes(32).toString('hex');
+  adminTokens.set(token, Date.now() + 2 * 3600 * 1000);
+  const https = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  res.setHeader('Set-Cookie', `${ADMIN_COOKIE}=${token}; Path=/api/admin; HttpOnly; SameSite=Strict; Max-Age=7200${https ? '; Secure' : ''}`);
+  apilog.add({ kind: 'admin', method: 'POST', target: '관리자 로그인', status: 200, ok: true, ms: 0 });
+  res.json({ ok: true });
+});
+app.post('/api/admin/logout', (req, res) => {
+  const m = (req.headers.cookie || '').match(/(?:^|;\s*)gg_admin=([a-f0-9]{64})/);
+  if (m) adminTokens.delete(m[1]);
+  res.setHeader('Set-Cookie', `${ADMIN_COOKIE}=; Path=/api/admin; HttpOnly; Max-Age=0`);
+  res.json({ ok: true });
+});
+app.use('/api/admin', (req, res, next) => (isAdmin(req) ? next() : res.status(403).json({ error: '관리자 비밀번호를 먼저 입력해 주세요.', needAdmin: true })));
+// 아이디 가운데를 가려서 보여줌 (관리자도 필요 이상 보지 않게)
+const maskId = (s) => (s.length <= 3 ? s[0] + '**' : s.slice(0, 2) + '*'.repeat(Math.max(2, s.length - 4)) + s.slice(-2));
+app.get('/api/admin/summary', (req, res) => {
+  const users = db.allUsers();
+  const stores = db.allStores();
+  const posts = db.allPosts();
+  const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
+  const owner = (id) => users.find((u) => u.id === id);
+  res.json({
+    counts: {
+      users: users.length,
+      stores: stores.length,
+      newThisWeek: stores.filter((s) => (s.createdAt || '') >= weekAgo).length,
+      posts: posts.length,
+      published: posts.filter((p) => Object.values(p.publications || {}).some((x) => x.status === 'published')).length,
+    },
+    stores: stores.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).map((s) => ({
+      name: s.name, category: s.category, area: (s.address || '').split(' ').slice(0, 2).join(' '),
+      createdAt: s.createdAt, owner: owner(s.ownerId) ? maskId(owner(s.ownerId).loginId) : '-',
+      posts: posts.filter((p) => p.storeId === s.id).length,
+    })),
+  });
+});
+app.get('/api/admin/logs', (req, res) => {
+  const kind = String(req.query.kind || 'all');
+  const all = apilog.list();
+  const rows = all.filter((x) => kind === 'all' || (kind === 'error' ? !x.ok : x.kind === kind)).slice(0, 300)
+    .map((x) => ({ ...x, user: x.user ? maskId(x.user) : '' }));
+  const count = (k) => all.filter((x) => x.kind === k).length;
+  res.json({ rows, total: all.length, byKind: { app: count('app'), meta: count('meta'), ai: count('ai'), error: all.filter((x) => !x.ok).length } });
+});
+app.get('/api/admin/consents', (req, res) => {
+  res.json({ rows: db.allUsers().slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).map((u) => ({
+    user: maskId(u.loginId), joinedAt: u.createdAt, version: u.consents?.version || '',
+    terms: !!u.consents?.terms, privacy: !!u.consents?.privacy, age: !!u.consents?.age,
+    agreedAt: u.consents?.agreedAt || '', marketing: !!u.consents?.marketing, marketingAt: u.consents?.marketingAt || '',
+  })) });
+});
+
 // 여기부터 아래 API는 모두 로그인해야 쓸 수 있음
 app.use('/api', (req, res, next) => {
   req.user = auth.currentUser(req);
