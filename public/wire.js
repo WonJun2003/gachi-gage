@@ -84,7 +84,7 @@ async function renderHome() {
       <button type="button" class="home-store" data-go-view="store">${esc(s.name)} <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
       <button type="button" class="home-admin" data-w-admin>관리자</button>
       <button type="button" class="home-write" data-w-write>＋ 글쓰기</button>
-      <button type="button" class="home-me" data-go-view="store" aria-label="내 정보"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="10" r="3.4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 18.5c1.6-2.4 3.9-3.6 6.5-3.6s4.9 1.2 6.5 3.6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+      <button type="button" class="home-me" data-w-me aria-label="내 프로필">${avatarHtml()}</button>
     </div>
 
     <div class="home-card hero">
@@ -161,6 +161,7 @@ $app.addEventListener('click', (e) => {
   if (e.target.closest('[data-w-write]')) return startWrite();
   if (e.target.closest('[data-w-consult]')) return openFeedback();
   if (e.target.closest('[data-w-admin]')) return adminLogin();
+  if (e.target.closest('[data-w-me]')) return openProfile();
 });
 $app.addEventListener('submit', async (e) => {
   if (!e.target.matches('[data-w-ask]')) return;
@@ -493,3 +494,49 @@ $app.addEventListener('click', async (e) => {
   if ((x = e.target.closest('[data-adm-kind]'))) { state.adminKind = x.dataset.admKind; return renderAdmin(); }
   if (e.target.closest('[data-adm-reload]')) return renderAdmin();
 });
+
+// ---------- 프로필 사진 (홈 오른쪽 위) ----------
+const PERSON_SVG = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="10" r="3.4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 18.5c1.6-2.4 3.9-3.6 6.5-3.6s4.9 1.2 6.5 3.6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
+const avatarHtml = () => (state.user?.avatar ? `<img class="avatar" src="${esc(state.user.avatar)}" alt="프로필 사진" />` : PERSON_SVG);
+
+// 사진을 가운데 정사각형으로 잘라 256px JPEG로
+async function squareAvatar(file) {
+  const img = await createImageBitmap(file);
+  const s = Math.min(img.width, img.height);
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 256, 256);
+  return new Promise((r) => c.toBlob(r, 'image/jpeg', 0.88));
+}
+async function uploadAvatar() {
+  const [file] = await pickFiles({ camera: false });
+  if (!file) return;
+  try {
+    const blob = await squareAvatar(file);
+    const res = await fetch('/api/auth/avatar', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || '사진을 올리지 못했어요.');
+    state.user = d.user;
+    toast('프로필 사진을 바꿨어요.');
+    if (state.view === 'home') document.querySelector('[data-w-me]').innerHTML = avatarHtml();
+  } catch (err) { toast(err.message || '이 사진은 쓸 수 없어요.'); }
+}
+function openProfile() {
+  const u = state.user || {};
+  const m = modal(`<div class="profile-box"><div class="profile-pic">${avatarHtml()}</div>
+      <b>${esc(state.store?.ownerName || u.loginId || '')} 사장님</b><span class="hint">${esc(u.loginId || '')} · ${esc(state.store?.name || '')}</span></div>
+    <div class="profile-actions">
+      <button class="btn primary" data-p-up>${u.avatar ? '사진 바꾸기' : '프로필 사진 올리기'}</button>
+      ${u.avatar ? '<button class="btn line" data-p-del>사진 지우기</button>' : ''}
+      <button class="btn line" data-p-store>가게 정보</button>
+      <button class="btn ghost" data-m="close">닫기</button></div>`);
+  m.el.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-p-up]')) { m.close(); return uploadAvatar(); }
+    if (e.target.closest('[data-p-store]')) { m.close(); return setView('store'); }
+    if (e.target.closest('[data-p-del]')) {
+      m.close();
+      try { state.user = (await api('DELETE', '/api/auth/avatar')).user; toast('프로필 사진을 지웠어요.'); if (state.view === 'home') document.querySelector('[data-w-me]').innerHTML = avatarHtml(); }
+      catch (err) { toast(err.message); }
+    }
+  });
+}

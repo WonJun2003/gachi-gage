@@ -84,7 +84,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // ---------- 로그인 ----------
-const userView = (u) => ({ loginId: u.loginId, name: u.name, consents: u.consents || null });
+const userView = (u) => ({ loginId: u.loginId, name: u.name, consents: u.consents || null, avatar: u.avatar ? `/uploads/${u.avatar}` : '' });
 // 약관 동의: 필수(이용약관·개인정보 수집·이용·만 14세 이상) + 선택(마케팅 정보 수신)
 const CONSENT_VERSION = '2026-11-20';
 function cleanConsents(c) {
@@ -211,6 +211,22 @@ app.use('/api', (req, res, next) => {
   req.user = auth.currentUser(req);
   if (!req.user) return res.status(401).json({ error: '로그인이 필요해요.', needLogin: true });
   next();
+});
+// 프로필 사진 (홈 오른쪽 위 사람 아이콘). 화면에서 256px 정사각형 JPEG로 줄여서 보냄
+const removeAvatarFile = (u) => { if (u.avatar) fs.promises.unlink(path.join(UPLOAD_DIR, u.avatar)).catch(() => {}); };
+app.post('/api/auth/avatar', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '2mb' }), (req, res) => {
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: '사진 파일을 골라 주세요.' });
+  const isJpeg = req.body[0] === 0xff && req.body[1] === 0xd8;
+  const isPng = req.body[0] === 0x89 && req.body[1] === 0x50;
+  if (!isJpeg && !isPng) return res.status(400).json({ error: 'JPG나 PNG 사진만 올릴 수 있어요.' });
+  const file = `avatar-${crypto.randomBytes(8).toString('hex')}.${isPng ? 'png' : 'jpg'}`;
+  fs.writeFileSync(path.join(UPLOAD_DIR, file), req.body);
+  removeAvatarFile(req.user);
+  res.json({ user: userView(db.updateUser(req.user.id, { avatar: file })) });
+});
+app.delete('/api/auth/avatar', (req, res) => {
+  removeAvatarFile(req.user);
+  res.json({ user: userView(db.updateUser(req.user.id, { avatar: '' })) });
 });
 // 마케팅 정보 수신 동의는 언제든 바꿀 수 있음 (선택 항목)
 app.put('/api/auth/consent', (req, res) => {
