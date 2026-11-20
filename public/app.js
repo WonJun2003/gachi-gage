@@ -1433,6 +1433,7 @@ function renderConsent() {
   const all = CONSENTS.every((x) => c[x.k]);
   $app.innerHTML = `
     <div class="auth consent">
+      <button type="button" class="w-back" data-cs-back aria-label="로그인으로 돌아가기"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       ${robot('guide', 'robot md')}
       <h1 style="text-align:center;margin:4px 0 6px">약관에 동의해 주세요</h1>
       <p class="lead" style="text-align:center">사장님 정보를 어떻게 쓰는지 먼저 알려 드릴게요.</p>
@@ -1443,7 +1444,7 @@ function renderConsent() {
           <details><summary>보기</summary><div class="hint cs-body">${x.body}</div></details>
         </div>`).join('')}
       </div>
-      <button type="button" class="btn primary block" data-cs-go ${consentOk(c) ? '' : 'disabled'}>동의하고 시작하기</button>
+      <button type="button" class="btn primary block" data-cs-go ${consentOk(c) ? '' : 'disabled'}>동의하고 회원가입</button>
       <p class="hint" style="text-align:center;margin-top:10px">해커톤 시연용 약관 초안이에요.</p>
     </div>`;
 }
@@ -1458,8 +1459,10 @@ $app.addEventListener('change', (e) => {
   renderConsent();
 });
 $app.addEventListener('click', (e) => {
+  if (e.target.closest('[data-cs-back]') && !state.user) { state.showConsent = false; authMode = 'login'; return renderAuth(); }
   if (!e.target.closest('[data-cs-go]') || state.user) return;
   if (!consentOk(getConsent())) return toast('필수 항목에 동의해 주세요.');
+  state.showConsent = false;
   authMode = 'signup';
   renderAuth();
 });
@@ -1481,7 +1484,7 @@ $app.addEventListener('change', async (e) => {
 });
 
 // ---------- 로그인 · 회원가입 ----------
-let authMode = consentOk(getConsent()) ? 'login' : 'signup'; // 약관 동의 직후엔 회원가입부터
+let authMode = 'login'; // 처음엔 로그인 화면. '회원가입'을 누르면 약관 동의 → 가입 화면
 function renderAuth() {
   $nav.classList.add('hidden');
   const signup = authMode === 'signup';
@@ -1518,7 +1521,10 @@ function renderAuth() {
 }
 $app.addEventListener('click', (e) => {
   const b = e.target.closest('[data-auth-mode]');
-  if (b && !state.user) { authMode = b.dataset.authMode; renderAuth(); }
+  if (!b || state.user) return;
+  if (b.dataset.authMode === 'signup') { state.showConsent = true; return renderConsent(); } // 회원가입 전에 약관 동의
+  authMode = b.dataset.authMode;
+  renderAuth();
 });
 async function afterLogin(me) {
   state.user = me.user;
@@ -1545,7 +1551,7 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 async function render() {
   if (!state.user) {
     if (!splashDone) return renderSplash();
-    if (!consentOk(getConsent())) return renderConsent();
+    if (state.showConsent) return renderConsent();
     return renderAuth();
   }
   if (!state.storeId) {
